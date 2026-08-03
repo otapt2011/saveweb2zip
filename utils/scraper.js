@@ -1,4 +1,3 @@
-// utils/scraper.js
 import * as cheerio from 'cheerio';
 import JSZip from 'jszip';
 
@@ -20,13 +19,6 @@ async function fetchFile(url) {
   return Buffer.from(await resp.arrayBuffer());
 }
 
-/**
- * Scrape a website and return a ZIP buffer.
- * @param {string} pageUrl
- * @param {object} options - { renameAssets, saveStructure, alternativeAlgorithm, mobileVersion }
- * @param {function} progressCallback - called with { copiedFilesAmount, total, isFinished, errorText }
- * @returns {Promise<Buffer>} ZIP file buffer
- */
 export async function scrapeWebsite(pageUrl, options = {}, progressCallback = null) {
   const { renameAssets, saveStructure } = options;
 
@@ -39,7 +31,7 @@ export async function scrapeWebsite(pageUrl, options = {}, progressCallback = nu
   const $ = cheerio.load(html);
 
   // Collect assets
-  const assets = []; // { url, type, folder, filename? }
+  const assets = [];
 
   // CSS
   $('link[rel="stylesheet"]').each((_, el) => {
@@ -47,7 +39,7 @@ export async function scrapeWebsite(pageUrl, options = {}, progressCallback = nu
     if (href) assets.push({ url: new URL(href, pageUrl).href, type: 'css', folder: saveStructure ? 'css' : '' });
   });
 
-  // JavaScript (external)
+  // JavaScript
   $('script[src]').each((_, el) => {
     const src = $(el).attr('src');
     if (src) assets.push({ url: new URL(src, pageUrl).href, type: 'js', folder: saveStructure ? 'js' : '' });
@@ -59,10 +51,7 @@ export async function scrapeWebsite(pageUrl, options = {}, progressCallback = nu
     if (src) assets.push({ url: new URL(src, pageUrl).href, type: 'img', folder: 'images' });
   });
 
-  // Fonts (simplified: collect all url() in CSS will be handled separately; here just a basic collection)
-  // For now we assume images, CSS, JS are enough. A full impl would parse CSS for url().
-
-  // Rename if needed
+  // Generate filenames
   if (renameAssets) {
     const nameCount = new Map();
     assets.forEach(asset => {
@@ -83,7 +72,7 @@ export async function scrapeWebsite(pageUrl, options = {}, progressCallback = nu
     });
   }
 
-  // Download and zip
+  // Download assets and build ZIP
   const zip = new JSZip();
   let copiedFiles = 0;
   const total = assets.length;
@@ -94,7 +83,7 @@ export async function scrapeWebsite(pageUrl, options = {}, progressCallback = nu
       const path = asset.folder ? `${asset.folder}/${asset.filename}` : asset.filename;
       zip.file(path, buffer);
     } catch (e) {
-      // skip failed assets
+      // skip failed
     }
     copiedFiles++;
     if (progressCallback) {
