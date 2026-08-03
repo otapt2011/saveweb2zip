@@ -2,9 +2,9 @@
 import { list } from '@vercel/blob';
 
 export default async function handler(req, res) {
-  const token = process.env.BLOB_TOKEN;
-
   const { hash } = req.query;
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+
   try {
     const { blobs } = await list({ prefix: `archive-${hash}`, token });
     if (blobs.length === 0) return res.status(404).json({ errorText: 'archive_not_ready' });
