@@ -66,7 +66,7 @@
 
   <script>
     (function () {
-      const API = 'https://saveweb2zip-ebon.vercel.app'; // <-- Replace with your Vercel URL
+      const API = 'https://saveweb2zip-ebon.vercel.app';  // 🔁 Replace with your actual Vercel domain
       const state = {
         hash: null,
         downloadedFiles: 0,
@@ -90,13 +90,10 @@
 
       function updatePopup(show, title) {
         if (show) {
-          state.isPopupActive = true;
-          state.popupTitle = title || '';
           popup.classList.remove('popup-hidden');
           popup.classList.add('popup-active');
-          if (popupTitleEl) popupTitleEl.textContent = state.popupTitle;
+          if (popupTitleEl) popupTitleEl.textContent = title || '';
         } else {
-          state.isPopupActive = false;
           popup.classList.add('popup-hidden');
           popup.classList.remove('popup-active');
         }
@@ -127,7 +124,7 @@
           if (!resp.ok) throw new Error('Status check failed');
           const data = await resp.json();
 
-          // Animate downloaded files count
+          // Animate file count
           let current = state.downloadedFiles;
           const target = data.copiedFilesAmount;
           clearInterval(intervalId);
@@ -195,7 +192,6 @@
       });
 
       popupCloseBtn.addEventListener('click', () => updatePopup(false));
-      // Close popup on background click
       popup.addEventListener('click', (e) => {
         if (e.target === popup) updatePopup(false);
       });
