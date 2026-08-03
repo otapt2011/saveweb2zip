@@ -3,10 +3,10 @@ import { put } from '@vercel/blob';
 import { scrapeWebsite } from '../utils/scraper.js';
 
 export default async function handler(req, res) {
+  const token = process.env.BLOB_TOKEN;
+
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    // ... CORS headers
     return res.status(200).end();
   }
 
@@ -18,9 +18,9 @@ export default async function handler(req, res) {
     try { new URL(url); } catch { return res.status(400).json({ errorText: 'invalid_url' }); }
 
     const hash = Math.random().toString(36).substring(2, 15);
-
-    // Save initial status
     const makeStatus = (data) => JSON.stringify({ ...data, md5: hash });
+
+    // Use token in all put calls
     await put(`job-${hash}.json`, makeStatus({
       status: 'processing',
       copiedFilesAmount: 0,
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
       isFinished: false,
       success: false,
       errorText: null
-    }), { access: 'public', contentType: 'application/json' });
+    }), { access: 'public', contentType: 'application/json', token });
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(200).json({ md5: hash, isFinished: false, success: false, copiedFilesAmount: 0 });
@@ -48,11 +48,11 @@ export default async function handler(req, res) {
           isFinished: progress.isFinished,
           success: false,
           errorText: null
-        }), { access: 'public', contentType: 'application/json' });
+        }), { access: 'public', contentType: 'application/json', token });
       }
     )
       .then(async (zipBuffer) => {
-        const zipBlob = await put(`archive-${hash}.zip`, zipBuffer, { access: 'public' });
+        const zipBlob = await put(`archive-${hash}.zip`, zipBuffer, { access: 'public', token });
         await put(`job-${hash}.json`, makeStatus({
           status: 'finished',
           copiedFilesAmount: finalCopied,
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
           success: true,
           downloadUrl: zipBlob.url,
           errorText: null
-        }), { access: 'public', contentType: 'application/json' });
+        }), { access: 'public', contentType: 'application/json', token });
       })
       .catch(async (err) => {
         await put(`job-${hash}.json`, makeStatus({
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
           copiedFilesAmount: 0,
           total: 0,
           downloadUrl: null
-        }), { access: 'public', contentType: 'application/json' });
+        }), { access: 'public', contentType: 'application/json', token });
       });
 
   } catch (err) {
