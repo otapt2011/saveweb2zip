@@ -1,3 +1,4 @@
+// api/copySite.js
 import { put } from '@vercel/blob';
 import { scrapeWebsite } from '../utils/scraper.js';
 
@@ -34,25 +35,29 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(200).json({ md5: hash, isFinished: false, success: false, copiedFilesAmount: 0 });
 
-    let finalCopied = 0, finalTotal = 0;
+    // Run the scraper with a safety wrapper
+    (async () => {
+      let finalCopied = 0, finalTotal = 0;
+      try {
+        const zipBuffer = await scrapeWebsite(
+          url,
+          { renameAssets: !!renameAssets, saveStructure: !!saveStructure },
+          (progress) => {
+            finalCopied = progress.copiedFilesAmount;
+            finalTotal = progress.total;
+            // Update status periodically
+            put(`job-${hash}.json`, makeStatus({
+              status: 'processing',
+              copiedFilesAmount: progress.copiedFilesAmount,
+              total: progress.total,
+              isFinished: progress.isFinished,
+              success: false,
+              errorText: null
+            }), { access: 'public', contentType: 'application/json', token }).catch(console.error);
+          }
+        );
 
-    scrapeWebsite(
-      url,
-      { renameAssets: !!renameAssets, saveStructure: !!saveStructure },
-      async (progress) => {
-        finalCopied = progress.copiedFilesAmount;
-        finalTotal = progress.total;
-        await put(`job-${hash}.json`, makeStatus({
-          status: 'processing',
-          copiedFilesAmount: progress.copiedFilesAmount,
-          total: progress.total,
-          isFinished: progress.isFinished,
-          success: false,
-          errorText: null
-        }), { access: 'public', contentType: 'application/json', token });
-      }
-    )
-      .then(async (zipBuffer) => {
+        // Upload the ZIP
         const zipBlob = await put(`archive-${hash}.zip`, zipBuffer, { access: 'public', token });
         await put(`job-${hash}.json`, makeStatus({
           status: 'finished',
@@ -63,18 +68,20 @@ export default async function handler(req, res) {
           downloadUrl: zipBlob.url,
           errorText: null
         }), { access: 'public', contentType: 'application/json', token });
-      })
-      .catch(async (err) => {
+      } catch (err) {
+        console.error('Scraper error:', err);
+        // Write the error into the status blob
         await put(`job-${hash}.json`, makeStatus({
           status: 'error',
           isFinished: true,
           success: false,
           errorText: err.message || 'unknown_error',
-          copiedFilesAmount: 0,
-          total: 0,
+          copiedFilesAmount: finalCopied,
+          total: finalTotal,
           downloadUrl: null
         }), { access: 'public', contentType: 'application/json', token });
-      });
+      }
+    })();
 
   } catch (err) {
     console.error('Handler error:', err);
