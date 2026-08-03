@@ -1,4 +1,3 @@
-// api/downloadArchive/[hash].js
 import { list } from '@vercel/blob';
 
 export default async function handler(req, res) {
