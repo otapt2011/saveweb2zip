@@ -1,7 +1,7 @@
 // api/copySite.js
 import { kv } from '@vercel/kv';
 import { put } from '@vercel/blob';
-import { scrapeWebsite } from '../../utils/scraper.js';
+import { scrapeWebsite } from '../utils/scraper.js';
 
 export default async function handler(req, res) {
   // CORS
