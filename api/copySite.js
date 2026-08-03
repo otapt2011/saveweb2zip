@@ -1,9 +1,7 @@
-// api/copySite.js
 import { put } from '@vercel/blob';
 import { scrapeWebsite } from '../utils/scraper.js';
 
 export default async function handler(req, res) {
-  // ---- CORS ----
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST');
@@ -19,7 +17,7 @@ export default async function handler(req, res) {
     try { new URL(url); } catch { return res.status(400).json({ errorText: 'invalid_url' }); }
 
     const hash = Math.random().toString(36).substring(2, 15);
-    const token = process.env.BLOB_READ_WRITE_TOKEN;  // ✅ use existing token
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
 
     const makeStatus = (data) => JSON.stringify({ ...data, md5: hash });
 
@@ -33,7 +31,6 @@ export default async function handler(req, res) {
       errorText: null
     }), { access: 'public', contentType: 'application/json', token });
 
-    // Respond immediately
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(200).json({ md5: hash, isFinished: false, success: false, copiedFilesAmount: 0 });
 
