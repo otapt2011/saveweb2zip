@@ -2,6 +2,8 @@
 import { list } from '@vercel/blob';
 
 export default async function handler(req, res) {
+  const token = process.env.BLOB_TOKEN;
+
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET');
@@ -13,7 +15,7 @@ export default async function handler(req, res) {
   if (!hash) return res.status(400).json({ error: 'hash missing' });
 
   try {
-    const { blobs } = await list({ prefix: `job-${hash}` });
+    const { blobs } = await list({ prefix: `job-${hash}`, token });
     if (blobs.length === 0) return res.status(404).json({ errorText: 'job_not_found' });
 
     const statusResp = await fetch(blobs[0].url);
