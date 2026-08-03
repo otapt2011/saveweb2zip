@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Save Web to ZIP</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    body { font-size: 14px; }
+    .popup-hidden { display: none; }
+    .popup-active { display: flex; }
+  </style>
+</head>
+<body class="bg-gray-100 h-full flex flex-col overflow-hidden">
+
+  <header class="bg-white shadow-sm px-3 py-2 flex items-center gap-2 flex-shrink-0">
+    <i class="fa-solid fa-file-zipper text-blue-600 text-lg"></i>
+    <h1 class="text-base font-semibold text-gray-800">SaveWeb2ZIP</h1>
+  </header>
+
+  <main class="flex-1 overflow-y-auto p-2 flex items-start justify-center">
+    <div class="w-full max-w-md space-y-2 mt-2">
+      <form id="siteForm" class="space-y-2 bg-white rounded-lg shadow p-3">
+        <div class="space-y-1">
+          <label class="block text-xs text-gray-600">Website URL</label>
+          <input id="websiteLink" type="url" placeholder="https://example.com" required
+                 class="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
+
+        <div class="space-y-1">
+          <label class="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+            <input type="checkbox" id="isLandUnique" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+            <span>Make asset filenames unique</span>
+          </label>
+          <label class="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+            <input type="checkbox" id="isSaveStructure" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+            <span>Keep directory structure</span>
+          </label>
+        </div>
+
+        <button type="submit" id="submitBtn"
+                class="w-full px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+          <i class="fa-solid fa-download mr-1"></i> <span id="btnText">Start Download</span>
+        </button>
+
+        <p id="downloadedFiles" class="text-xs text-gray-500 text-center">0 files copied</p>
+      </form>
+    </div>
+  </main>
+
+  <!-- Popup -->
+  <div id="popup" class="popup-hidden fixed inset-0 bg-black bg-opacity-40 items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-lg p-4 w-64 text-center space-y-2">
+      <p id="popupTitle" class="text-xs font-semibold"></p>
+      <button id="popupCloseBtn" data-close-popup
+              class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition">
+        OK
+      </button>
+    </div>
+  </div>
+
+  <footer class="bg-white border-t px-3 py-1.5 flex-shrink-0 text-xs text-gray-500 text-center">
+    <i class="fa-regular fa-copyright"></i> SaveWeb2ZIP
+  </footer>
+
+  <script>
+    (function () {
+      const API = 'https://your-project.vercel.app'; // <-- Replace with your Vercel URL
+      const state = {
+        hash: null,
+        downloadedFiles: 0,
+        isActiveRequest: false,
+        popupTitle: '',
+        isPopupActive: false,
+      };
+
+      const form = document.getElementById('siteForm');
+      const urlInput = document.getElementById('websiteLink');
+      const renameCheck = document.getElementById('isLandUnique');
+      const structureCheck = document.getElementById('isSaveStructure');
+      const submitBtn = document.getElementById('submitBtn');
+      const btnText = document.getElementById('btnText');
+      const downloadCountSpan = document.getElementById('downloadedFiles');
+      const popup = document.getElementById('popup');
+      const popupTitleEl = document.getElementById('popupTitle');
+      const popupCloseBtn = document.getElementById('popupCloseBtn');
+
+      let intervalId = null;
+
+      function updatePopup(show, title) {
+        if (show) {
+          state.isPopupActive = true;
+          state.popupTitle = title || '';
+          popup.classList.remove('popup-hidden');
+          popup.classList.add('popup-active');
+          if (popupTitleEl) popupTitleEl.textContent = state.popupTitle;
+        } else {
+          state.isPopupActive = false;
+          popup.classList.add('popup-hidden');
+          popup.classList.remove('popup-active');
+        }
+      }
+
+      function updateDownloadedFiles(count) {
+        state.downloadedFiles = count;
+        downloadCountSpan.textContent = `${count} files copied`;
+      }
+
+      function toggleButton(disabled) {
+        submitBtn.disabled = disabled;
+        btnText.textContent = disabled ? 'Processing…' : 'Start Download';
+      }
+
+      function downloadFile(filename, url) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      async function checkProgress(hash) {
+        try {
+          const resp = await fetch(`${API}/api/getStatus/${hash}`);
+          if (!resp.ok) throw new Error('Status check failed');
+          const data = await resp.json();
+
+          // Animate downloaded files count
+          let current = state.downloadedFiles;
+          const target = data.copiedFilesAmount;
+          clearInterval(intervalId);
+          intervalId = setInterval(() => {
+            if (current < target) {
+              current++;
+              updateDownloadedFiles(current);
+            } else {
+              clearInterval(intervalId);
+            }
+          }, 10);
+
+          if (!data.isFinished) {
+            setTimeout(() => checkProgress(hash), 1500);
+          } else if (data.success) {
+            toggleButton(false);
+            updateDownloadedFiles(target);
+            downloadFile('website.zip', data.downloadUrl);
+            updatePopup(true, 'Download started!');
+          } else {
+            toggleButton(false);
+            updatePopup(true, `Error: ${data.errorText || 'Unknown'}`);
+          }
+        } catch (err) {
+          toggleButton(false);
+          updatePopup(true, `Error: ${err.message}`);
+        }
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const url = urlInput.value.trim();
+        if (!url || !/^https?:\/\/.+/i.test(url)) {
+          urlInput.setCustomValidity('Enter a valid URL');
+          urlInput.reportValidity();
+          return;
+        }
+        urlInput.setCustomValidity('');
+
+        toggleButton(true);
+        updateDownloadedFiles(0);
+        state.isActiveRequest = true;
+
+        try {
+          const resp = await fetch(`${API}/api/copySite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url,
+              renameAssets: renameCheck.checked,
+              saveStructure: structureCheck.checked,
+            }),
+          });
+          const data = await resp.json();
+          if (data.md5) {
+            state.hash = data.md5;
+            checkProgress(data.md5);
+          } else {
+            throw new Error(data.errorText || 'Failed to start');
+          }
+        } catch (err) {
+          toggleButton(false);
+          updatePopup(true, `Error: ${err.message}`);
+        }
+      });
+
+      popupCloseBtn.addEventListener('click', () => updatePopup(false));
+      // Close popup on background click
+      popup.addEventListener('click', (e) => {
+        if (e.target === popup) updatePopup(false);
+      });
+    })();
+  </script>
+</body>
+</html>
