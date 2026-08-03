@@ -3,10 +3,11 @@ import { put } from '@vercel/blob';
 import { scrapeWebsite } from '../utils/scraper.js';
 
 export default async function handler(req, res) {
-  const token = process.env.BLOB_TOKEN;
-
+  // ---- CORS ----
   if (req.method === 'OPTIONS') {
-    // ... CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     return res.status(200).end();
   }
 
@@ -18,9 +19,11 @@ export default async function handler(req, res) {
     try { new URL(url); } catch { return res.status(400).json({ errorText: 'invalid_url' }); }
 
     const hash = Math.random().toString(36).substring(2, 15);
+    const token = process.env.BLOB_READ_WRITE_TOKEN;  // ✅ use existing token
+
     const makeStatus = (data) => JSON.stringify({ ...data, md5: hash });
 
-    // Use token in all put calls
+    // Initial status
     await put(`job-${hash}.json`, makeStatus({
       status: 'processing',
       copiedFilesAmount: 0,
@@ -30,6 +33,7 @@ export default async function handler(req, res) {
       errorText: null
     }), { access: 'public', contentType: 'application/json', token });
 
+    // Respond immediately
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(200).json({ md5: hash, isFinished: false, success: false, copiedFilesAmount: 0 });
 
