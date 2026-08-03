@@ -1,4 +1,5 @@
-import { kv } from '@vercel/kv';
+// api/getStatus/[hash].js
+import { list } from '@vercel/blob';
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -11,12 +12,16 @@ export default async function handler(req, res) {
   const { hash } = req.query;
   if (!hash) return res.status(400).json({ error: 'hash missing' });
 
-  const job = await kv.get(`job:${hash}`);
-  if (!job) return res.status(404).json({ errorText: 'job_not_found' });
+  try {
+    const { blobs } = await list({ prefix: `job-${hash}` });
+    if (blobs.length === 0) return res.status(404).json({ errorText: 'job_not_found' });
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  return res.status(200).json({
-    ...job,
-    md5: hash
-  });
+    const statusResp = await fetch(blobs[0].url);
+    const status = await statusResp.json();
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(200).json(status);
+  } catch (err) {
+    return res.status(500).json({ errorText: err.message });
+  }
 }
