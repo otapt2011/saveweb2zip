@@ -4,7 +4,6 @@ import { put } from '@vercel/blob';
 import { scrapeWebsite } from '../utils/scraper.js';
 
 export default async function handler(req, res) {
-  // CORS
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST');
@@ -15,21 +14,14 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   try {
-    const { url, renameAssets, saveStructure, alternativeAlgorithm, mobileVersion } = req.body || {};
-    if (!url || typeof url !== 'string') {
-      return res.status(400).json({ errorText: 'url_required' });
-    }
+    const { url, renameAssets, saveStructure } = req.body || {};
+    if (!url) return res.status(400).json({ errorText: 'url_required' });
 
-    // Validate URL
-    try {
-      new URL(url);
-    } catch {
-      return res.status(400).json({ errorText: 'invalid_url' });
-    }
+    try { new URL(url); } catch { return res.status(400).json({ errorText: 'invalid_url' }); }
 
     const hash = Math.random().toString(36).substring(2, 15);
 
-    // Initial job status
+    // Initial job
     await kv.set(`job:${hash}`, {
       status: 'processing',
       copiedFilesAmount: 0,
@@ -38,15 +30,17 @@ export default async function handler(req, res) {
       errorText: null
     });
 
-    // Send response immediately
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(200).json({ md5: hash, isFinished: false, success: false, copiedFilesAmount: 0 });
 
-    // Run scraping in background
+    let finalCopied = 0, finalTotal = 0;
+
     scrapeWebsite(
       url,
       { renameAssets: !!renameAssets, saveStructure: !!saveStructure },
       async (progress) => {
+        finalCopied = progress.copiedFilesAmount;
+        finalTotal = progress.total;
         try {
           await kv.set(`job:${hash}`, {
             status: 'processing',
@@ -55,18 +49,15 @@ export default async function handler(req, res) {
             isFinished: progress.isFinished,
             errorText: null
           });
-        } catch (e) {
-          console.error('KV update failed:', e);
-        }
+        } catch (e) { console.error('KV update:', e); }
       }
     )
       .then(async (zipBuffer) => {
-        // Upload ZIP to Vercel Blob
         const blob = await put(`archive-${hash}.zip`, zipBuffer, { access: 'public' });
         await kv.set(`job:${hash}`, {
           status: 'finished',
-          copiedFilesAmount: progress?.copiedFilesAmount || 0,
-          total: progress?.total || 0,
+          copiedFilesAmount: finalCopied,
+          total: finalTotal,
           isFinished: true,
           success: true,
           downloadUrl: blob.url,
@@ -74,6 +65,8 @@ export default async function handler(req, res) {
         });
       })
       .catch(async (err) => {
+        // Log the full error (visible in Vercel Runtime Logs)
+        console.error('Scrape failed:', err);
         await kv.set(`job:${hash}`, {
           status: 'error',
           isFinished: true,
@@ -85,7 +78,12 @@ export default async function handler(req, res) {
       });
 
   } catch (err) {
+    // ---- DEBUG: return the real error ----
+    console.error('Handler error:', err);
     res.setHeader('Access-Control-Allow-Origin', '*');
-    return res.status(500).json({ errorText: 'internal_error' });
+    return res.status(500).json({
+      errorText: `internal_error: ${err.message || 'no details'}`,
+      stack: err.stack   // helps debugging
+    });
   }
 }
