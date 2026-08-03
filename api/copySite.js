@@ -1,8 +1,10 @@
+// api/copySite.js
 import { kv } from '@vercel/kv';
 import { put } from '@vercel/blob';
 import { scrapeWebsite } from '../../utils/scraper.js';
 
 export default async function handler(req, res) {
+  // CORS
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST');
@@ -13,35 +15,77 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   try {
-    const { url, renameAssets, saveStructure, alternativeAlgorithm, mobileVersion } = req.body;
-    if (!url) return res.status(400).json({ error: 'url required' });
+    const { url, renameAssets, saveStructure, alternativeAlgorithm, mobileVersion } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ errorText: 'url_required' });
+    }
 
-    // Generate a unique job ID
+    // Validate URL
+    try {
+      new URL(url);
+    } catch {
+      return res.status(400).json({ errorText: 'invalid_url' });
+    }
+
     const hash = Math.random().toString(36).substring(2, 15);
 
-    // Store initial status
-    await kv.set(`job:${hash}`, { status: 'processing', copiedFilesAmount: 0, isFinished: false, errorText: null });
-
-    // Run the scrape asynchronously
-    scrapeWebsite(url, { renameAssets, saveStructure, alternativeAlgorithm, mobileVersion }, async (progress) => {
-      await kv.set(`job:${hash}`, {
-        status: 'processing',
-        copiedFilesAmount: progress.copiedFilesAmount,
-        isFinished: progress.isFinished,
-        errorText: null
-      });
-
-      if (progress.isFinished) {
-        // Finalize: upload zip to Vercel Blob
-        // (You would need to pass the zip blob from the scraper; adjust scrapeWebsite to return the blob at the end)
-        // For simplicity, we'll assume scrapeWebsite saves the blob internally. We'll refine.
-      }
+    // Initial job status
+    await kv.set(`job:${hash}`, {
+      status: 'processing',
+      copiedFilesAmount: 0,
+      total: 0,
+      isFinished: false,
+      errorText: null
     });
 
-    // Return the job ID immediately
+    // Send response immediately
     res.setHeader('Access-Control-Allow-Origin', '*');
-    return res.status(200).json({ md5: hash, isFinished: false, success: false, copiedFilesAmount: 0 });
+    res.status(200).json({ md5: hash, isFinished: false, success: false, copiedFilesAmount: 0 });
+
+    // Run scraping in background
+    scrapeWebsite(
+      url,
+      { renameAssets: !!renameAssets, saveStructure: !!saveStructure },
+      async (progress) => {
+        try {
+          await kv.set(`job:${hash}`, {
+            status: 'processing',
+            copiedFilesAmount: progress.copiedFilesAmount,
+            total: progress.total,
+            isFinished: progress.isFinished,
+            errorText: null
+          });
+        } catch (e) {
+          console.error('KV update failed:', e);
+        }
+      }
+    )
+      .then(async (zipBuffer) => {
+        // Upload ZIP to Vercel Blob
+        const blob = await put(`archive-${hash}.zip`, zipBuffer, { access: 'public' });
+        await kv.set(`job:${hash}`, {
+          status: 'finished',
+          copiedFilesAmount: progress?.copiedFilesAmount || 0,
+          total: progress?.total || 0,
+          isFinished: true,
+          success: true,
+          downloadUrl: blob.url,
+          errorText: null
+        });
+      })
+      .catch(async (err) => {
+        await kv.set(`job:${hash}`, {
+          status: 'error',
+          isFinished: true,
+          success: false,
+          errorText: err.message || 'unknown_error',
+          copiedFilesAmount: 0,
+          total: 0,
+        });
+      });
+
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(500).json({ errorText: 'internal_error' });
   }
 }
