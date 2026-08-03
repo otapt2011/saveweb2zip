@@ -1,3 +1,4 @@
+// api/getStatus/[hash].js
 import { list } from '@vercel/blob';
 
 export default async function handler(req, res) {
@@ -17,11 +18,13 @@ export default async function handler(req, res) {
     const { blobs } = await list({ prefix: `job-${hash}`, token });
     if (blobs.length === 0) return res.status(404).json({ errorText: 'job_not_found' });
 
-    const statusResp = await fetch(blobs[0].url);
-    const status = await statusResp.json();
+    const response = await fetch(blobs[0].url);
+    const rawText = await response.text();
 
+    // Return the raw text instead of trying to parse JSON
     res.setHeader('Access-Control-Allow-Origin', '*');
-    return res.status(200).json(status);
+    res.setHeader('Content-Type', 'text/plain');
+    return res.status(200).send(rawText);
   } catch (err) {
     return res.status(500).json({ errorText: err.message });
   }
